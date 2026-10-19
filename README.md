@@ -17,3 +17,7 @@ python gsc/gsc.py query --dims page,device --start 2026-09-01 --end 2026-09-30 -
 
 Dimensions: `query, page, country, device, date, searchAppearance`. Data lags ~3 days and goes back 16 months.
 Exported CSVs go in `data/`, which is git-ignored.
+
+## Retention plan
+
+`retention/retention-plan.md` is the publisher retention marketing plan built on WebEngage: lifecycle stages, event taxonomy, segments, journeys, channel rules, experiments and a 90-day roadmap.
