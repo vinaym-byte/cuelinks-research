@@ -1,6 +1,6 @@
 # Cuelinks Retention Marketing Plan (WebEngage)
 
-_Prepared Oct 2026. Items marked **[verify]** are assumptions about product features or data that the team should confirm before build._
+_Prepared Oct 2026, aligned with the team's Publisher Email Framework (38 emails, 5 phases; see Section 12). Items marked **[verify]** are assumptions the team should confirm before build._
 
 ---
 
@@ -13,8 +13,8 @@ So retention here is not "did they log in". It is: **do they keep creating links
 ### Publisher lifecycle
 
 ```
-Visit → Sign up → Approved → First link → First click → First sale (tentative)
-      → Sale validated → Reaches payout threshold → First payout → Habitual earner
+Visit → Sign up → Account approved → Campaign applied → Campaign approved → First link → First click
+      → First sale (pending) → Sale validated → Payout ready (₹500) → Invoice raised → Invoice paid → Habitual earner
                                                                      ↓
                                                 At-risk → Dormant → Won back / Churned
 ```
@@ -71,7 +71,7 @@ Journeys are only as good as the events they trigger on. Build this first.
 |---|---|---|
 | Website (cuelinks.com + dashboard) | Web SDK | Page and merchant views, sign-up, link creation, tool usage |
 | Android/iOS app **[verify]** | Mobile SDK | Same events plus push token |
-| Backend / tracking system | **Server-side REST API** (Events + Users) | Clicks, tentative/validated/cancelled sales, payouts, KYC status. This data never touches the browser, so it **must** come from the server. |
+| Backend / tracking system | **Server-side REST API** (Events + Users) | Clicks, pending/validated/cancelled sales, campaign approvals, invoices and payouts, profile and bank-detail status. This data never touches the browser, so it **must** come from the server. |
 | Nightly batch job | Users API (bulk) | Rolling aggregates: earnings in the last 7/30 days, link counts, tier, top merchant |
 
 ### 3.3 Event taxonomy (minimum set)
@@ -87,12 +87,16 @@ Journeys are only as good as the events they trigger on. Build this first.
 | `Sale Tracked` | `merchant`, `order_value_bucket`, `commission`, `status=tentative`, `is_first_sale` | Server |
 | `Sale Validated` / `Sale Cancelled` | `merchant`, `commission`, `cancel_reason` | Server |
 | `Payout Threshold Reached` | `balance` | Server |
-| `Payout Requested` / `Payout Processed` / `Payout Failed` | `amount`, `method`, `failure_reason` | Server |
-| `KYC Updated` | `pan_status`, `bank_status` | Server |
-| `Referral Sent` / `Referral Joined` **[verify program]** | | Server |
+| `Campaign Applied` / `Campaign Approved` / `Campaign Rejected` | `campaign`, `category`, `reason` | Server |
+| `Invoice Raised` / `Invoice Rejected` / `Invoice Paid` | `invoice_id`, `amount`, `reject_reason`, `is_first_payout` | Server |
+| `Profile Updated` | `completion_pct`, `bank_details_added`, `niche` | Server |
+| `Campaign Expired` / `Rate Changed` | `campaign`, `old_rate`, `new_rate` | Server (fanned out by Relays) |
+| `Earnings Milestone` | `tier` (₹1K, ₹10K, ₹50K, ₹1L) | Server |
+| `Security Alert` | `type` (2FA off, new device, bank or email changed) | Server |
+| `Referral Joined` | `referrer_id` | Server |
 
 ### 3.4 User attributes (refresh nightly)
-`lifecycle_stage`, `publisher_type`, `intent_merchant`, `top_categories` (list), `top_merchant_30d`, `links_7d`, `links_30d`, `clicks_30d`, `sales_30d`, `earnings_30d`, `lifetime_earnings`, `available_balance`, `distance_to_payout`, `last_link_at`, `last_sale_at`, `last_login_at`, `kyc_complete` (bool), `value_tier` (see 4.3), `is_off_intent` (bool), `preferred_language` **[if collected]**.
+`lifecycle_stage`, `publisher_type`, `intent_merchant`, `top_categories` (list), `top_merchant_30d`, `links_7d`, `links_30d`, `clicks_30d`, `sales_30d`, `earnings_30d`, `lifetime_earnings`, `available_balance`, `distance_to_payout`, `last_link_at`, `last_sale_at`, `last_login_at`, `profile_complete`, `bank_details_added` (bool), `value_tier` (see 4.3), `is_off_intent` (bool), `preferred_language` **[if collected]**.
 
 Keeping `lifecycle_stage` and `value_tier` as attributes lets WebEngage segments stay simple and live.
 
@@ -126,7 +130,7 @@ Load merchant/campaign data (name, category, commission rate, status, offer end 
 Ask for this in a one-question sign-up survey. Infer it from the first tool used if they skip.
 
 ### 4.3 Value tier (RFM on earnings, recomputed monthly)
-- **Platinum**: top 2% by 90-day earnings. Gets a human account manager, early access, bonus rates **[verify commercial room]**.
+- **Platinum**: top 2% by 90-day earnings. Gets an account manager, early access, LetsEarn bonus tiers.
 - **Gold**: next 8%.
 - **Silver**: the rest of the active earners.
 - **Bronze**: earned once, inconsistent.
@@ -161,8 +165,10 @@ Each program lists the trigger, flow, channels and success metric. Day counts ar
 **Off-intent branch:** one email explaining what Cuelinks is, then low-frequency only. Exclude them from paid SMS/WhatsApp.
 **Exit:** `Link Created` → P2.
 
-### P2. First click → first sale
-**Trigger:** `Link Created` (`is_first_link = true`)
+### P2. Campaign approval → first link → first sale
+**Trigger:** `Campaign Approved` / `Campaign Rejected`, then `Link Created` (`is_first_link = true`)
+
+- **Campaign approved:** deep-link to that campaign's link generator, past the 2FA login. **Rejected:** always offer 3 eligible alternatives. **Approved 30 days, no link:** step-by-step nudge (framework emails).
 
 - **+0:** In-app celebration + "Where to share it" checklist for their publisher type.
 - **+48h, 0 clicks** (`linked_no_click`): "Your link hasn't been clicked yet. 3 places to share it." Deep-link to share sheets.
@@ -176,13 +182,14 @@ Small, mostly transactional messages. These have the highest open rates and buil
 
 | Event | Channel | Message |
 |---|---|---|
-| First `Sale Tracked` | Push + email + in-app | "You just earned ₹{{commission}} from {{merchant}}!" Explain tentative → validated and the typical validation time. |
+| First `Sale Tracked` (pending) | Push + email + in-app | **New (not in the email framework):** "Your first sale: ₹{{commission}} pending from {{merchant}}". Explain pending → validated and the typical validation time. |
+| First `Sale Validated` | Email + push | Framework's First Earning email: celebrate and give the next step. |
 | `Sale Validated` (batched daily) | Push / app inbox | "₹X confirmed today." |
 | `Sale Cancelled` | Email / app inbox | Plain explanation of why (returns/cancellations) and the merchant's typical cancellation rate. **Prevents "Cuelinks is cheating me" churn.** |
 | `distance_to_payout` ≤ 20% | Push + WhatsApp | "You're only ₹{{distance}} away from your payout." Include 2 offers to close the gap. |
-| `Payout Threshold Reached` | Email + push | "Withdraw now." If `kyc_complete = false` → go to P8. |
-| `Payout Processed` | WhatsApp/email | Receipt plus "Here's what top earners do next month." |
-| `Payout Failed` | Email + SMS | Fix-your-bank-details link. High priority, overrides frequency caps. |
+| `Earnings Milestone` (₹1K / ₹10K / ₹50K / ₹1L) | Email + push | Celebrate and unlock the tier's benefits. |
+
+Payout-ready, invoice and payout messages live in P8.
 
 ### P4. Habit loop: personalised deal digests
 **Segment:** `active_earner`, `first_sale`, `clicks_no_sale`
@@ -210,22 +217,34 @@ Use **at-risk and dormant segments** too. Sale events are the best win-back hook
 - **Day 7:** Survey: "What's stopping you?" (1 tap: tracking issues / low commissions / no time / found another network / payouts slow). Route the answer: tracking → support ticket; commissions → rate alerts/bonus; payouts → payout FAQ.
 - **Platinum/Gold:** create a task for the account manager (webhook to CRM/Slack) on Day 0.
 
-### P8. KYC & payout friction
-**Trigger:** `kyc_complete = false` AND (`available_balance` > 0 OR `Payout Threshold Reached`)
-Sequence: in-app banner → email → push → WhatsApp at +1/+3/+7 days: "₹{{available_balance}} is waiting, add PAN & bank to withdraw." Do not repeat the balance in SMS (keep sensitive data out of SMS bodies).
+### P8. Invoice & payout
+**Trigger:** validated earnings cross the ₹500 threshold in a monthly cycle.
+
+| Event | Channel | Message |
+|---|---|---|
+| `Payout Threshold Reached` | Email + push + WhatsApp | Payout Ready: exact amount, cycle deadline, deep link to the invoice page. If `bank_details_added = false`, ask for them here. |
+| +15 days, no invoice | Email + push | Invoice Reminder: ₹X waiting and the deadline date. |
+| `Invoice Rejected` | Email + push | The exact fix and a resubmit link. |
+| `Invoice Paid` | Email + WhatsApp | Payout confirmed, with arrival time. |
+| First `Invoice Paid` | Email + in-app | Celebrate, plus the referral CTA (P10). |
+
+Keep balances out of SMS bodies.
 
 ### P9. Win-back for dormant & lapsed publishers
 | Segment | Hook | Channel/cadence |
 |---|---|---|
+| No activity 7 / 14 / 30 days | Framework check-ins: earned while away, what's new, account still active | Email, plus push on Day 7 |
 | Dormant with **unwithdrawn balance** | "₹{{available_balance}} is still in your account" | Email + push + WhatsApp. This is the strongest hook. |
 | Dormant 45–90d | "What's new": new merchants, higher rates, new tools (e.g. Telegram auto-converter) | Email biweekly + push; spike during sale events |
 | Lapsed 120d+ | One sale-event campaign per quarter | Email only. Suppress after 2 quarters of no engagement to protect deliverability. |
 | `never_activated` | Monthly "start with {{intent_merchant}}" + success story | Email only |
 
+"Activity" means links, clicks or sales, not logins: bot and extension users earn without logging in.
+
 Optional, if the business case holds: a **reactivation bonus** (e.g. extra % on first sale within 14 days) for Gold+ dormant users only, tested against a control.
 
-### P10. Advocacy & referral **[verify program]**
-**Trigger:** `Payout Processed` (they are happiest here) or `value_tier` upgrade.
+### P10. Advocacy & referral
+**Trigger:** first `Invoice Paid` (they are happiest here), with one reminder 30 days later if the referral link is unused.
 "Refer a fellow channel admin and earn X." Also ask for app store ratings and testimonials. Ask Platinum publishers for case studies to use in P1/P2.
 
 ### P11. Tier progression (loyalty)
@@ -301,7 +320,7 @@ Monthly tier recompute → "You're now Gold: here's what that unlocks." Show the
 - Baseline all KPIs from the last 6 months of cohorts.
 
 ### Phase 2: days 31–60 (habit + risk)
-- Launch P2 (first sale), P4 (weekly report + deal digest), P7 (at-risk), P8 (KYC/payout).
+- Launch P2 (first sale), P4 (weekly report + deal digest), P7 (at-risk), P8 (invoice/payout).
 - Load merchant business data; launch P5 Relays (rate up, new merchant, paused).
 - Publisher-type survey at sign-up; begin first 3 A/B tests.
 
@@ -334,8 +353,42 @@ Monthly tier recompute → "You're now Gold: here's what that unlocks." Show the
 
 1. Current baselines: monthly sign-ups, % approved, % with first link, % with first sale in 30 days, MAEP, monthly churn.
 2. Which tools exist today (Telegram bot, Chrome extension, WP plugin, app, API, referral program) and their usage share.
-3. Payout threshold, validation timelines per merchant, KYC requirements.
+3. Validation timelines per merchant (for the pending-sale message); referral payout and LetsEarn tier thresholds to show in messages.
 4. WebEngage plan entitlements: WhatsApp, Relays/business data, UCG, app inbox, and event/MAU limits.
 5. Current consent state per channel (how many publishers are opted in to WhatsApp/push).
 6. Commercial room for bonuses (reactivation bonus, tier perks).
 7. Sale-event calendar and merchant rate changes planned for the next 3 months.
+
+---
+
+## 12. Alignment with the Publisher Email Framework
+
+The team's 38-email framework is the email layer of these journeys.
+
+| Framework phase | Emails | Journey |
+|---|---|---|
+| Onboarding (9) | Application Received, Review Taking Longer, Account Approved, Day 2 and Day 5 nudges, Account Not Approved, Complete Your Profile, AM Assigned, T&C Warning | P1; AM Assigned feeds P7 |
+| Activation (5) | Campaign Application Received, Campaign Approved, Campaign Not Approved, First Link Created, No Link After Approval (Day 30) | P2 |
+| Engagement (6) | No Clicks 7 Days, Clicks No Conversions 14 Days, Weekly Digest, Low Volume Tip, High Performer, Campaign Expired | P2, P4, P5, P11 |
+| Monetisation (8) | First Earning, Drop-off Recovery, Payout Ready, Invoice Reminder, Invoice Paid, First Payout + Referral, Invoice Rejected, Earnings Milestone | P3, P7, P8, P10 |
+| Retention (6) | 7-Day, 2-Week and 1-Month check-ins, Account Suspended, Referral Reminder, New Campaign Recommendations | P9, P10, P4 |
+| Security (4) | Login OTP, 2FA Enabled, 2FA Disabled, New Device | Outside retention journeys; never capped |
+| Promotions (4 types) | Campaign Spotlight, Seasonal Push, New Advertiser Launch, LetsEarn Bonus | P4, P6, P5, P11 |
+
+### Proposed changes to the framework
+
+| # | Change | Why |
+|---|---|---|
+| 1 | Run the triggers across in-app, push and WhatsApp, with email as fallback | About 70% of search traffic is mobile; deal admins live on WhatsApp and Telegram |
+| 2 | Add a "first sale tracked (pending)" message | First Earning waits for validation, which can take weeks |
+| 3 | Measure inactivity by links, clicks and sales, not logins | Bot and extension users earn without logging in |
+| 4 | Keep a low-frequency win-back after Day 30 dormant | Unclaimed balances are the strongest hook, and the framework stops at Day 30 |
+| 5 | Test including dormant publishers in seasonal pushes; add a day-of send for opted-in deal admins | Sale events are the best reactivation moment |
+| 6 | Add a sale-cancelled explanation | Unexplained reversals read as being cheated |
+| 7 | Add a commission-change alert next to Campaign Expired | A rate cut is also silent revenue loss |
+| 8 | Ask for missing bank details again at Payout Ready | The Day 3 profile reminder is the only one today |
+| 9 | Add bank-details, email and password change alerts | A changed bank account is the classic payout-hijack path |
+| 10 | Exempt the weekly digest from the 48h transactional suppression | The busiest publishers would rarely receive it |
+| 11 | Add holdout groups to each email's success metric | Open and click rates don't show incremental lift |
+
+Channel caps follow the framework: max 2 promotional emails a week and 6 a month, with its suppression rules applied on every channel.
