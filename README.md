@@ -20,4 +20,6 @@ Exported CSVs go in `data/`, which is git-ignored.
 
 ## LetsEarn mobile audit
 
+`webapp-audit/` runs test signups and the post-signup journey on cuelinks.com; see its README.
+
 `letsearn-mobile-audit/` is a kit that lets Claude Code drive the LetsEarn app on a connected phone, walk the user journeys and write funnel reports. See its README.
