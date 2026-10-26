@@ -17,3 +17,7 @@ python gsc/gsc.py query --dims page,device --start 2026-09-01 --end 2026-09-30 -
 
 Dimensions: `query, page, country, device, date, searchAppearance`. Data lags ~3 days and goes back 16 months.
 Exported CSVs go in `data/`, which is git-ignored.
+
+## LetsEarn mobile audit
+
+`letsearn-mobile-audit/` is a kit that lets Claude Code drive the LetsEarn app on a connected phone, walk the user journeys and write funnel reports. See its README.

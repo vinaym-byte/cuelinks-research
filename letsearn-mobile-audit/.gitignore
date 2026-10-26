@@ -1,0 +1,5 @@
+# Audit output: screenshots can show real names, balances and payout details
+runs/
+
+# Root .gitignore ignores *.json; keep the MCP server config
+!.mcp.json
